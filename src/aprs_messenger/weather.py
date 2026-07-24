@@ -141,12 +141,23 @@ class DayForecast:
         return wmo_meta(int(self.weathercode))[1]
 
 
-def fetch_3day_forecast(lat: float, lon: float, timeout: float = 12.0) -> list[DayForecast]:
+@dataclass
+class WeatherSnapshot:
+    """3-day daily forecast plus current conditions."""
+
+    days: list[DayForecast]
+    current_temp: Optional[float] = None
+    current_weathercode: Optional[int] = None
+
+
+def fetch_3day_forecast(lat: float, lon: float, timeout: float = 12.0) -> WeatherSnapshot:
+    """Fetch daily forecast and current temperature from Open-Meteo."""
     url = (
         "https://api.open-meteo.com/v1/forecast"
         f"?latitude={lat:.4f}&longitude={lon:.4f}"
         "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,"
         "weathercode,windspeed_10m_max"
+        "&current=temperature_2m,weather_code"
         "&timezone=auto&forecast_days=3"
     )
     req = urllib.request.Request(url, headers={"User-Agent": "APRS-Messenger/1.0"})
@@ -166,7 +177,23 @@ def fetch_3day_forecast(lat: float, lon: float, timeout: float = 12.0) -> list[D
                 wind_max=float((daily.get("windspeed_10m_max") or [0])[i] or 0),
             )
         )
-    return out
+    current = data.get("current") or {}
+    cur_t = current.get("temperature_2m")
+    cur_code = current.get("weather_code")
+    return WeatherSnapshot(
+        days=out,
+        current_temp=float(cur_t) if cur_t is not None else None,
+        current_weathercode=int(cur_code) if cur_code is not None else None,
+    )
+
+
+# Back-compat alias used by older call sites expecting a list
+def fetch_weather(lat: float, lon: float, timeout: float = 12.0) -> WeatherSnapshot:
+    return fetch_3day_forecast(lat, lon, timeout=timeout)
+
+
+# Auto-refresh interval for live current temperature / forecast
+_WEATHER_REFRESH_MS = 30 * 60 * 1000  # 30 minutes
 
 
 class WeatherChart(Gtk.Box):
@@ -202,6 +229,8 @@ class WeatherChart(Gtk.Box):
         self.pack_start(frame, True, True, 0)
 
         self._days: list[DayForecast] = []
+        self._current_temp: Optional[float] = None
+        self._current_weathercode: Optional[int] = None
         self._grid = ""
         self._latlon: Optional[tuple[float, float]] = None
         self._error = ""
@@ -211,16 +240,29 @@ class WeatherChart(Gtk.Box):
         self._snow: list[tuple[float, float, float, float]] = []
         self._cloud_seed = random.Random(42)
         self._anim_id = GLib.timeout_add(40, self._tick_anim)  # ~25 fps
+        self._refresh_id = GLib.timeout_add(
+            _WEATHER_REFRESH_MS, self._tick_refresh
+        )
 
     def destroy(self):
         if self._anim_id:
             GLib.source_remove(self._anim_id)
             self._anim_id = 0
+        if self._refresh_id:
+            GLib.source_remove(self._refresh_id)
+            self._refresh_id = 0
         super().destroy()
 
     def _tick_anim(self) -> bool:
         if self.get_mapped() and (self._days or self._loading):
             self._screen.queue_draw()
+        return True
+
+    def _tick_refresh(self) -> bool:
+        """Periodic refresh (every 30 minutes) while a grid is configured."""
+        if self._grid and not self._loading:
+            log.info("weather auto-refresh for grid %s", self._grid)
+            self.refresh()
         return True
 
     def set_grid(self, grid: str) -> None:
@@ -230,6 +272,8 @@ class WeatherChart(Gtk.Box):
         self._grid = grid
         if not grid:
             self._days = []
+            self._current_temp = None
+            self._current_weathercode = None
             self._error = "Set your Maidenhead grid on login"
             self._status.set_text("")
             self._screen.queue_draw()
@@ -238,6 +282,8 @@ class WeatherChart(Gtk.Box):
             self._latlon = grid_to_latlon(grid)
         except ValueError:
             self._days = []
+            self._current_temp = None
+            self._current_weathercode = None
             self._error = f"Invalid grid: {grid}"
             self._screen.queue_draw()
             return
@@ -260,7 +306,10 @@ class WeatherChart(Gtk.Box):
 
     def _fetch_thread(self, grid: str, lat: float, lon: float) -> None:
         try:
-            days = fetch_3day_forecast(lat, lon)
+            snap = fetch_3day_forecast(lat, lon)
+            days = snap.days
+            cur_t = snap.current_temp
+            cur_code = snap.current_weathercode
             err = ""
         except (
             urllib.error.URLError,
@@ -271,6 +320,8 @@ class WeatherChart(Gtk.Box):
             ValueError,
         ) as e:
             days = []
+            cur_t = None
+            cur_code = None
             err = "Offline / unavailable"
             log.warning("weather fetch failed: %s", e)
 
@@ -278,11 +329,16 @@ class WeatherChart(Gtk.Box):
             if self._grid != grid:
                 return False
             self._days = days
+            self._current_temp = cur_t
+            self._current_weathercode = cur_code
             self._error = err
             self._loading = False
             if days:
                 self._status.set_text(f"Grid {grid}  ·  {lat:.2f}°, {lon:.2f}°")
-                self._seed_particles(days[0].scene)
+                scene_code = (
+                    cur_code if cur_code is not None else days[0].weathercode
+                )
+                self._seed_particles(wmo_meta(int(scene_code))[1])
             else:
                 self._status.set_text(err or "No data")
             self._screen.queue_draw()
@@ -480,7 +536,15 @@ class WeatherChart(Gtk.Box):
         sx, sy = m, m
         sw, sh = w - 2 * m, h - 2 * m
 
-        scene = self._days[0].scene if self._days else "cloud"
+        if self._days:
+            scene_code = (
+                self._current_weathercode
+                if self._current_weathercode is not None
+                else self._days[0].weathercode
+            )
+            scene = wmo_meta(int(scene_code))[1]
+        else:
+            scene = "cloud"
         top, bot = self._scene_colors(scene)
 
         lg = cairo.LinearGradient(0, sy, 0, sy + sh)
@@ -515,7 +579,18 @@ class WeatherChart(Gtk.Box):
             return False
 
         today = self._days[0]
-        label, _ = wmo_meta(today.weathercode)
+        scene_code = (
+            self._current_weathercode
+            if self._current_weathercode is not None
+            else today.weathercode
+        )
+        label, _ = wmo_meta(int(scene_code))
+        # Prefer live current temperature; fall back to today's high if missing
+        current_temp = (
+            self._current_temp
+            if self._current_temp is not None
+            else today.t_max
+        )
 
         # ── animated scene (left) ──
         if scene in ("sun", "sun_cloud"):
@@ -573,15 +648,15 @@ class WeatherChart(Gtk.Box):
         cr.close_path()
         cr.fill()
 
-        # Today summary overlay on scene
+        # Current conditions overlay on scene
         self._text(cr, sx + 20, sy + 28, self._grid or "—", 13, (1, 1, 1, 0.85))
-        self._text(cr, sx + 20, sy + 70, f"{today.t_max:.0f}°", 42, (1, 1, 1))
-        self._text(cr, sx + 20, sy + 94, label, 14, (1, 1, 1, 0.9))
+        self._text(cr, sx + 20, sy + 70, f"{current_temp:.0f}°", 42, (1, 1, 1))
+        self._text(cr, sx + 20, sy + 94, "Current Temperature", 14, (1, 1, 1, 0.9))
         self._text(
             cr,
             sx + 20,
             sy + 116,
-            f"H {today.t_max:.0f}°  ·  L {today.t_min:.0f}°  ·  💧 {today.precip:.1f} mm",
+            f"{label}  ·  H {today.t_max:.0f}°  ·  L {today.t_min:.0f}°  ·  💧 {today.precip:.1f} mm",
             12,
             (1, 1, 1, 0.75),
         )

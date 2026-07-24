@@ -157,7 +157,7 @@ class ConversationsMixin:
         dlg.add_buttons(
             Gtk.STOCK_CANCEL,
             Gtk.ResponseType.CANCEL,
-            "Open",
+            "OK",
             Gtk.ResponseType.OK,
         )
         box = dlg.get_content_area()

@@ -1,5 +1,5 @@
 
-## Installing APRS-Messenger 4.0.0 by Eamon Morgan - MI7DJT ##
+## Installing APRS-Messenger 4.0.1 by Eamon Morgan - MI7DJT ##
 
 
 Open a terminal in the folder and type:
