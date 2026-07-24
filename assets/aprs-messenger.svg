@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0d1117"/>
+      <stop offset="100%" style="stop-color:#161b22"/>
+    </linearGradient>
+    <linearGradient id="bubble" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3fb950"/>
+      <stop offset="100%" style="stop-color:#238636"/>
+    </linearGradient>
+    <linearGradient id="bubble2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#58a6ff"/>
+      <stop offset="100%" style="stop-color:#1f6feb"/>
+    </linearGradient>
+  </defs>
+  <!-- rounded app background -->
+  <rect x="8" y="8" width="240" height="240" rx="48" ry="48" fill="url(#bg)" stroke="#30363d" stroke-width="4"/>
+  <!-- main chat bubble -->
+  <path d="M48 72c0-12 10-22 22-22h90c12 0 22 10 22 22v70c0 12-10 22-22 22H95l-28 28v-28H70c-12 0-22-10-22-22V72z" fill="url(#bubble)"/>
+  <!-- dots -->
+  <circle cx="95" cy="107" r="9" fill="#e6edf3"/>
+  <circle cx="125" cy="107" r="9" fill="#e6edf3"/>
+  <circle cx="155" cy="107" r="9" fill="#e6edf3"/>
+  <!-- secondary bubble -->
+  <path d="M118 128c0-10 8-18 18-18h54c10 0 18 8 18 18v48c0 10-8 18-18 18h-12v20l-22-20h-20c-10 0-18-8-18-18v-48z" fill="url(#bubble2)" opacity="0.95"/>
+  <!-- radio waves -->
+  <path d="M200 56c12 12 12 32 0 44" fill="none" stroke="#3fb950" stroke-width="6" stroke-linecap="round" opacity="0.9"/>
+  <path d="M214 44c20 20 20 52 0 72" fill="none" stroke="#58a6ff" stroke-width="6" stroke-linecap="round" opacity="0.75"/>
+</svg>
