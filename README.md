@@ -35,7 +35,7 @@ Animated Local 3 Day Weather Widget on Main Menu.
 
 Login Detection.
 
-Fully Themeable by editing /src/theme.py
+Fully Themeable by editing /src/aprs_messenger/theme.py
 
 No external dependencies. The app is totally self-contained.
 
